@@ -1110,6 +1110,42 @@
 @media(max-width:980px){#panel-calc .calc-form.live-calc-form{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media(max-width:680px){#panel-calc .calc-form.live-calc-form{grid-template-columns:1fr}.calc-live-actions{align-items:stretch}.calc-submit-btn{width:100%}.calc-submit-status{width:100%;min-width:0}}
 
+
+
+/* ==== Live Salary Pulse ==== */
+.live-pulse{margin:0 0 24px;padding:22px;border-radius:22px;background:linear-gradient(145deg,#173B3A,#285653);color:#fff;box-shadow:0 16px 32px rgba(23,59,58,.16);position:relative;overflow:hidden;}
+.live-pulse:after{content:"";position:absolute;width:220px;height:220px;border-radius:50%;right:-90px;top:-115px;background:rgba(255,255,255,.055);pointer-events:none;}
+.live-pulse-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;position:relative;z-index:1;}
+.live-pulse-kicker{font-size:9.5px;text-transform:uppercase;letter-spacing:.16em;color:#BDD2CD;font-weight:800;margin-bottom:6px;}
+.live-pulse h3{margin:0;color:#fff;font-size:25px;line-height:1.1;letter-spacing:-.025em;font-family:"Iowan Old Style",Georgia,"Times New Roman",serif;}
+.live-pulse-desc{margin:7px 0 0;max-width:720px;color:#D6E3DF;font-size:12px;line-height:1.55;}
+.live-refresh{appearance:none;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.1);color:#fff;border-radius:999px;padding:9px 13px;font-size:10px;font-weight:800;letter-spacing:.04em;cursor:pointer;min-height:38px;white-space:nowrap;}
+.live-refresh:hover{background:rgba(255,255,255,.16);}
+.live-refresh:disabled{opacity:.5;cursor:wait;}
+.live-pulse-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:18px;position:relative;z-index:1;}
+.live-metric{padding:15px 15px 13px;border-radius:16px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.1);min-width:0;}
+.live-metric .label{font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:#BDD2CD;font-weight:800;}
+.live-metric .value{font-size:29px;line-height:1;margin-top:8px;font-weight:800;letter-spacing:-.045em;color:#fff;overflow-wrap:anywhere;}
+.live-metric .note{font-size:10px;color:#C8D9D5;margin-top:6px;line-height:1.35;}
+.live-pulse-body{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:14px;margin-top:14px;position:relative;z-index:1;}
+.live-panel{background:#FFFEFB;color:var(--ink);border-radius:17px;padding:15px 16px;min-width:0;}
+.live-panel h4{margin:0 0 3px;color:var(--teal);font-size:12px;text-transform:uppercase;letter-spacing:.08em;}
+.live-panel .sub{font-size:10.5px;color:var(--ink-soft);margin-bottom:10px;line-height:1.45;}
+.live-table-wrap{overflow:auto;max-height:235px;border-radius:12px;border:1px solid var(--line);}
+.live-table{width:100%;border-collapse:collapse;font-size:11px;}
+.live-table th{position:sticky;top:0;background:#F5F2EA;color:var(--ink-soft);font-size:8.5px;text-transform:uppercase;letter-spacing:.08em;text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);}
+.live-table td{padding:9px;border-bottom:1px solid var(--line);vertical-align:top;}
+.live-table td:nth-child(n+3),.live-table th:nth-child(n+3){text-align:right;white-space:nowrap;}
+.live-table tr:last-child td{border-bottom:0;}
+.live-empty{padding:18px;border-radius:12px;background:#F6F4EE;color:var(--ink-soft);font-size:11px;line-height:1.5;text-align:center;}
+.live-status-list{display:grid;gap:9px;}
+.live-status-item{padding:11px 12px;border-radius:13px;background:#F6F4EE;border:1px solid var(--line);}
+.live-status-item strong{display:block;color:var(--teal);font-size:12px;margin-bottom:2px;}
+.live-status-item span{display:block;color:var(--ink-soft);font-size:10.5px;line-height:1.45;}
+.live-pulse-foot{font-size:9.5px;color:#BDD2CD;margin-top:10px;line-height:1.45;position:relative;z-index:1;}
+@media(max-width:900px){.live-pulse-metrics{grid-template-columns:repeat(2,minmax(0,1fr));}.live-pulse-body{grid-template-columns:1fr;}}
+@media(max-width:560px){.live-pulse{padding:18px}.live-pulse-head{display:block}.live-refresh{margin-top:12px}.live-pulse-metrics{grid-template-columns:1fr 1fr}.live-metric .value{font-size:25px}}
+
 </style>
 </head>
 <body>
@@ -1194,6 +1230,40 @@
   <section class="panel" id="panel-comp">
     <div id="comp-hero-shell"></div>
     <div id="comp-glance" class="glance-grid"></div>
+
+    <section class="live-pulse" id="live-salary-pulse" aria-live="polite">
+      <div class="live-pulse-head">
+        <div>
+          <div class="live-pulse-kicker">Growing with every verified contribution</div>
+          <h3>Live Salary Pulse</h3>
+          <p class="live-pulse-desc">A separate, continuously growing view of anonymous salaries contributed through the calculator. Only submissions that pass manual review are included here; individual salary rows are never displayed.</p>
+        </div>
+        <button type="button" class="live-refresh" id="live-salary-refresh">Refresh live data</button>
+      </div>
+      <div class="live-pulse-metrics" id="live-salary-metrics">
+        <div class="live-metric"><div class="label">Approved submissions</div><div class="value">—</div><div class="note">Loading live data…</div></div>
+        <div class="live-metric"><div class="label">Live median</div><div class="value">—</div><div class="note">Shown at n ≥ 5</div></div>
+        <div class="live-metric"><div class="label">Titles represented</div><div class="value">—</div><div class="note">Approved live entries</div></div>
+        <div class="live-metric"><div class="label">Counties represented</div><div class="value">—</div><div class="note">Approved live entries</div></div>
+      </div>
+      <div class="live-pulse-body">
+        <div class="live-panel">
+          <h4>Live title benchmarks</h4>
+          <div class="sub">Only titles with at least 5 approved anonymous submissions appear. P25–P75 shows the middle half of submitted salaries.</div>
+          <div id="live-title-benchmarks"></div>
+        </div>
+        <div class="live-panel">
+          <h4>How this live layer works</h4>
+          <div class="sub">The live layer stays separate from the validated 2,103-record benchmark.</div>
+          <div class="live-status-list">
+            <div class="live-status-item"><strong>1. Submitted</strong><span>A calculator user contributes an anonymous salary entry.</span></div>
+            <div class="live-status-item"><strong>2. Reviewed</strong><span>You verify the entry in Supabase and mark it accepted + included.</span></div>
+            <div class="live-status-item"><strong>3. Aggregated</strong><span>Only groups meeting the minimum sample threshold are shown publicly.</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="live-pulse-foot" id="live-salary-updated">Live salary data is separate from the validated compensation benchmark and updates after approved submissions are refreshed.</div>
+    </section>
 
     <div class="g12 comp-bento">
       <div class="card median-card"><div class="card-head"><h3>Median Pay by Job Family</h3><span class="card-tag">Top 8 by pay</span></div><div class="card-subline">A quick view of which job families have the highest median annualized base pay in the combined dataset.</div><div id="cb-median-family"></div></div>
@@ -1649,6 +1719,67 @@ renderCompViz('All Southern California','n');
 document.getElementById('comp-county-filter').addEventListener('change', e=>renderCompViz(e.target.value, document.getElementById('comp-sort-filter').value));
 document.getElementById('comp-sort-filter').addEventListener('change', e=>renderCompViz(document.getElementById('comp-county-filter').value, e.target.value));
 
+
+// ---------- Live Salary Pulse ----------
+const liveRefreshBtn = document.getElementById('live-salary-refresh');
+const liveMetricsEl = document.getElementById('live-salary-metrics');
+const liveTitlesEl = document.getElementById('live-title-benchmarks');
+const liveUpdatedEl = document.getElementById('live-salary-updated');
+let liveSalaryLoading = false;
+
+function money0(v){
+  return Number.isFinite(Number(v)) ? '$' + Math.round(Number(v)).toLocaleString() : '—';
+}
+
+function renderLiveSalaryPulse(data){
+  const overall = data.overall;
+  liveMetricsEl.innerHTML = `
+    <div class="live-metric"><div class="label">Approved submissions</div><div class="value">${Number(data.approved_submissions||0).toLocaleString()}</div><div class="note">Verified calculator entries</div></div>
+    <div class="live-metric"><div class="label">Live median</div><div class="value">${overall ? money0(overall.median) : 'Building'}</div><div class="note">${overall ? `P25 ${money0(overall.p25)} · P75 ${money0(overall.p75)}` : `Shown once ${data.min_public_sample||5}+ entries are approved`}</div></div>
+    <div class="live-metric"><div class="label">Titles represented</div><div class="value">${Number(data.represented_titles||0).toLocaleString()}</div><div class="note">Across ${Number(data.represented_families||0).toLocaleString()} job families</div></div>
+    <div class="live-metric"><div class="label">Counties represented</div><div class="value">${Number(data.represented_counties||0).toLocaleString()}</div><div class="note">Approved live entries</div></div>`;
+
+  const groups = Array.isArray(data.title_groups) ? data.title_groups : [];
+  if(!groups.length){
+    liveTitlesEl.innerHTML = `<div class="live-empty">No job title has reached the public minimum of ${data.min_public_sample||5} approved submissions yet. The live section will populate automatically as verified entries accumulate.</div>`;
+  }else{
+    const rows = groups.slice(0,20).map(g=>`<tr><td><strong>${g.title}</strong><br><span style="color:var(--ink-soft);font-size:9.5px;">${g.job_family||''}</span></td><td>${g.n}</td><td>${money0(g.p25)}</td><td><strong>${money0(g.median)}</strong></td><td>${money0(g.p75)}</td></tr>`).join('');
+    liveTitlesEl.innerHTML = `<div class="live-table-wrap"><table class="live-table"><thead><tr><th>Standardized title</th><th>N</th><th>P25</th><th>Median</th><th>P75</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  const stamp = data.generated_at ? new Date(data.generated_at) : null;
+  liveUpdatedEl.textContent = `Live salary data is separate from the validated compensation benchmark. ${stamp && !isNaN(stamp) ? 'Last refreshed ' + stamp.toLocaleString() + '.' : ''} Public salary statistics require at least ${data.min_public_sample||5} approved submissions per group.`;
+}
+
+async function loadLiveSalaryPulse(){
+  if(liveSalaryLoading) return;
+  liveSalaryLoading = true;
+  liveRefreshBtn.disabled = true;
+  liveRefreshBtn.textContent = 'Refreshing…';
+  try{
+    const response = await fetch('/api/live-salary-stats', {headers:{'Accept':'application/json'}});
+    const data = await response.json();
+    if(!response.ok || !data || data.ok !== true) throw new Error((data && data.error) || 'Unable to load live salary data.');
+    renderLiveSalaryPulse(data);
+  }catch(err){
+    console.error('Live salary pulse failed:', err);
+    liveMetricsEl.innerHTML = `
+      <div class="live-metric"><div class="label">Approved submissions</div><div class="value">—</div><div class="note">Live data unavailable</div></div>
+      <div class="live-metric"><div class="label">Live median</div><div class="value">—</div><div class="note">Try refreshing</div></div>
+      <div class="live-metric"><div class="label">Titles represented</div><div class="value">—</div><div class="note">Try refreshing</div></div>
+      <div class="live-metric"><div class="label">Counties represented</div><div class="value">—</div><div class="note">Try refreshing</div></div>`;
+    liveTitlesEl.innerHTML = '<div class="live-empty">Live salary data could not be loaded. The validated benchmark remains available elsewhere on this page.</div>';
+    liveUpdatedEl.textContent = 'Live Salary Pulse could not refresh. Check the live-salary-stats API route and try again.';
+  }finally{
+    liveSalaryLoading = false;
+    liveRefreshBtn.disabled = false;
+    liveRefreshBtn.textContent = 'Refresh live data';
+  }
+}
+
+liveRefreshBtn.addEventListener('click', loadLiveSalaryPulse);
+loadLiveSalaryPulse();
+
 // ---------- Salary Calculator ----------
 const calcCatSel = document.getElementById('calc-jobcat');
 const calcTitleSel = document.getElementById('calc-title');
@@ -1886,7 +2017,7 @@ async function submitAnonymousSalary(){
       throw new Error((result && result.error) || 'Unable to save this salary entry.');
     }
     lastSubmittedSignature = signature;
-    calcSubmitStatus.textContent = 'Saved anonymously — thank you for strengthening the live benchmark.';
+    calcSubmitStatus.textContent = 'Saved anonymously — submitted for review. It will join the Live Salary Pulse after verification.';
     calcSubmitStatus.className = 'calc-submit-status ok';
   }catch(err){
     console.error('Anonymous salary submission failed:', err);
