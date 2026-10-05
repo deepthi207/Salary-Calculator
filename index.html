@@ -1528,5 +1528,172 @@ buildFilters(interactiveView);
 renderInteractive(interactiveView);
 </script>
 
+<script id="snwr-market-fix-v4">
+// ---------------------------------------------------------------------------
+// Market Check correction v4
+// 1) Screens implausible self-reported (individual survey) salaries before
+//    percentiles are calculated. Each self-reported value is compared with the
+//    employer-payroll distribution for the same job family + level (falls back
+//    to level only when fewer than 10 employer records exist). Values below
+//    60% of the employer P10 or above 150% of the employer P90 are excluded.
+//    Employer/payroll records are never screened.
+// 2) A benchmark segment now needs >=5 records AND >=3 distinct salary values,
+//    so one repeated value can no longer become P25, median and P75 at once.
+// 3) Display fixes: correct ordinals (1st/2nd/3rd), "Below/Above all matched
+//    records" instead of "0th"/"100th", non-overlapping range-bar labels, a
+//    sample breakdown (employer vs. self-reported, screened count), and an
+//    explicit note when organization size or tenure was not used in the match.
+// ---------------------------------------------------------------------------
+const MARKET_SCREEN={lowFactor:0.6,highFactor:1.5,minReference:10};
+const marketReferenceCache={};
+function marketIsSelfReported(row){ return row.sourceType!=='Organization'; }
+function marketReferenceRange(family,level){
+  const key=family+'|'+level;
+  if(key in marketReferenceCache) return marketReferenceCache[key];
+  const employer=benchmarkPayroll().filter(row=>!marketIsSelfReported(row));
+  let basis='job family + level';
+  let ref=employer.filter(row=>row.jobFamily===family&&row.level===level).map(row=>row.pay);
+  if(ref.length<MARKET_SCREEN.minReference){ ref=employer.filter(row=>row.level===level).map(row=>row.pay); basis='level'; }
+  let range=null;
+  if(ref.length>=MARKET_SCREEN.minReference){
+    range={low:percentile(ref,.10)*MARKET_SCREEN.lowFactor,high:percentile(ref,.90)*MARKET_SCREEN.highFactor,basis,n:ref.length};
+  }
+  marketReferenceCache[key]=range;
+  return range;
+}
+function marketPassesScreen(row){
+  if(!marketIsSelfReported(row)) return true;
+  const range=marketReferenceRange(row.jobFamily,row.level);
+  if(!range) return true;
+  return row.pay>=range.low&&row.pay<=range.high;
+}
+function marketOrdinal(n){
+  const v=Math.round(n), mod100=v%100;
+  if(mod100>=11&&mod100<=13) return v+'th';
+  return v+({1:'st',2:'nd',3:'rd'}[v%10]||'th');
+}
+function marketDistinct(rows){ return new Set(rows.map(row=>Math.round(row.pay))).size; }
+
+calculateMarketCheck = function(family,titleInput,geography,orgSize,salary,tenureYears){
+  const numericSalary=Number(salary), numericTenure=Number(tenureYears);
+  if(!family||!String(titleInput||'').trim()||!geography||!orgSize||!Number.isFinite(numericSalary)||numericSalary<10000||!Number.isFinite(numericTenure)||numericTenure<0||numericTenure>50) return {error:'Choose a job family, enter a job title, choose geography and organization size, then enter a valid annual salary and 0–50 years of tenure.'};
+  const tenureBand=marketTenureBand(numericTenure);
+  const allFamilyRows=benchmarkPayroll().filter(row=>row.jobFamily===family);
+  const familyRows=allFamilyRows.filter(marketPassesScreen);
+  if(familyRows.length<5) return {error:'There are not enough benchmark-eligible records for this job family.'};
+  const titleMatch=closestMarketTitle(family,titleInput);
+  const sameTitle=row=>titleMatch&&normalizeMarketTitle(row.jobTitle)===normalizeMarketTitle(titleMatch.title);
+  const titleRows=titleMatch ? familyRows.filter(sameTitle) : [];
+  const screenedTitle=titleMatch ? allFamilyRows.filter(sameTitle).length-titleRows.length : 0;
+  const inferredLevel=modalValue((titleMatch?allFamilyRows.filter(sameTitle):[]).map(row=>row.level));
+  const geoFilter=rows=>geography==='All geographies'?rows:rows.filter(row=>geography==='Unknown / Other'?row.geography==='Not reported':row.geography===geography);
+  const sizeFilter=rows=>orgSize==='All organization sizes'?rows:rows.filter(row=>orgSize==='Unknown / Not reported'?row.orgSize==='Not reported':row.orgSize===orgSize);
+  const tenureFilter=rows=>rows.filter(row=>marketTenureBand(row.tenureYears)===tenureBand);
+  const both=rows=>sizeFilter(geoFilter(rows));
+  const candidates=[];
+  const add=(method,rows,used)=>candidates.push({method,rows,used});
+  if(titleMatch){
+    add('Standardized title + geography + organization size + tenure band',tenureFilter(both(titleRows)),{geo:1,size:1,tenure:1});
+    add('Standardized title + geography + organization size',both(titleRows),{geo:1,size:1});
+    add('Standardized title + geography + tenure band',tenureFilter(geoFilter(titleRows)),{geo:1,tenure:1});
+    add('Standardized title + organization size + tenure band',tenureFilter(sizeFilter(titleRows)),{size:1,tenure:1});
+    add('Standardized title + geography',geoFilter(titleRows),{geo:1});
+    add('Standardized title + organization size',sizeFilter(titleRows),{size:1});
+    add('Standardized title + tenure band',tenureFilter(titleRows),{tenure:1});
+    add('Standardized title across all available records',titleRows,{});
+  }
+  if(inferredLevel){
+    const levelRows=familyRows.filter(row=>row.level===inferredLevel);
+    add('Job family + inferred level + geography + organization size + tenure band',tenureFilter(both(levelRows)),{geo:1,size:1,tenure:1});
+    add('Job family + inferred level + geography + organization size',both(levelRows),{geo:1,size:1});
+    add('Job family + inferred level + geography',geoFilter(levelRows),{geo:1});
+    add('Job family + inferred level + organization size',sizeFilter(levelRows),{size:1});
+    add('Job family + inferred level',levelRows,{});
+  }
+  add('Job family + geography + organization size + tenure band',tenureFilter(both(familyRows)),{geo:1,size:1,tenure:1});
+  add('Job family + geography + organization size',both(familyRows),{geo:1,size:1});
+  add('Job family + geography',geoFilter(familyRows),{geo:1});
+  add('Job family + organization size',sizeFilter(familyRows),{size:1});
+  add('Job family + tenure band',tenureFilter(familyRows),{tenure:1});
+  add('Job family across all available records',familyRows,{});
+  const selected=candidates.find(candidate=>candidate.rows.length>=5&&marketDistinct(candidate.rows)>=3);
+  if(!selected) return {error:'No benchmark segment meets the minimum sample size of five records with at least three distinct salary values.'};
+  const pays=selected.rows.map(row=>row.pay).filter(Number.isFinite).sort((a,b)=>a-b);
+  if(pays.length<5) return {error:'No benchmark segment has at least five valid salary records.'};
+  const p10=percentile(pays,.10),p25=percentile(pays,.25),median=percentile(pays,.50),p75=percentile(pays,.75),p90=percentile(pays,.90);
+  const below=pays.filter(pay=>pay<numericSalary).length,equal=pays.filter(pay=>pay===numericSalary).length;
+  const percentileRank=Math.max(0,Math.min(100,Math.round((below+equal*.5)/pays.length*100)));
+  const belowAll=numericSalary<pays[0], aboveAll=numericSalary>pays[pays.length-1];
+  const gap=median-numericSalary,gapPct=numericSalary>0?gap/numericSalary*100:null;
+  let position='Within market range — lower half';
+  if(numericSalary<p25) position='Below market range';
+  else if(numericSalary>=median&&numericSalary<=p75) position='Within market range — upper half';
+  else if(numericSalary>p75) position='Above market range';
+  let guidance=`Your salary is within the competitive range of ${moneyFull(p25)} to ${moneyFull(p75)}. The matched market median is ${moneyFull(median)}.`;
+  if(numericSalary<p25) guidance=`Your salary is below the matched market range. The matched 25th percentile is ${moneyFull(p25)} and the market median is ${moneyFull(median)}.`;
+  else if(numericSalary>p75) guidance=`Your salary is above the matched 75th percentile of ${moneyFull(p75)}. The market median for this sample is ${moneyFull(median)}.`;
+  const employerCount=selected.rows.filter(row=>!marketIsSelfReported(row)).length;
+  const selfCount=selected.rows.length-employerCount;
+  const used=selected.used;
+  const notUsed=[];
+  if(geography!=='All geographies'&&!used.geo) notUsed.push('geography');
+  if(orgSize!=='All organization sizes'&&!used.size) notUsed.push('organization size');
+  if(!used.tenure) notUsed.push('tenure band');
+  const tenureUsed=!!used.tenure;
+  const roleNote=titleMatch?`${titleMatch.kind}: ${titleMatch.title}${inferredLevel?` · inferred level: ${inferredLevel}`:''}`:'No close standardized-title match was found; the calculator used a broader job-family benchmark.';
+  const titleNote=`${roleNote} · Geography: ${geography}${used.geo||geography==='All geographies'?'':' (not used)'} · Org size: ${orgSize}${used.size||orgSize==='All organization sizes'?'':' (not used)'} · Experience proxy: ${numericTenure} year${numericTenure===1?'':'s'} (${tenureBand})${tenureUsed?' included in match':' not used'}.`;
+  return {family,titleInput,geography,orgSize,salary:numericSalary,tenureYears:numericTenure,tenureBand,tenureUsed,titleMatch,inferredLevel,method:selected.method,rows:selected.rows,pays,p10,p25,median,p75,p90,percentileRank,belowAll,aboveAll,gap,gapPct,position,guidance,titleNote,employerCount,selfCount,screenedTitle,notUsed};
+};
+
+renderMarketResult = function(result){
+  const target=document.getElementById('marketResults');
+  if(result.error){target.innerHTML=`<div class="market-error"><b>Unable to calculate:</b> ${escapeHtml(result.error)}</div>`;return;}
+  // Axis spans the full matched distribution and your salary, with a little padding.
+  const lo=Math.min(result.pays[0],result.salary), hi=Math.max(result.pays[result.pays.length-1],result.salary);
+  const pad=(hi-lo)*.04||hi*.04;
+  const axisMin=Math.max(0,lo-pad), axisMax=hi+pad;
+  const pos=value=>marketMarkerPosition(value,axisMin,axisMax);
+  // Stagger labels that would collide.
+  const markers=[
+    {key:'p25',label:'P25',value:result.p25},
+    {key:'median',label:'Median',value:result.median},
+    {key:'p75',label:'P75',value:result.p75},
+  ].map(m=>({...m,left:pos(m.value)})).sort((a,b)=>a.left-b.left);
+  // Merge markers at (almost) the same point into one label.
+  const merged=[];
+  markers.forEach(m=>{const last=merged[merged.length-1]; if(last&&Math.abs(last.left-m.left)<0.6){last.label+=' = '+m.label;} else merged.push({...m});});
+  let lastLeft=-100,row=0;
+  merged.forEach(m=>{ if(m.left-lastLeft<9){row=row?0:1;} else row=0; m.row=row; lastLeft=m.left; });
+  const salaryLeft=pos(result.salary);
+  const markerHtml=merged.map(m=>`<div class="salary-marker" style="left:${m.left}%"><strong style="top:${m.row?'-29px':'-17px'}">${escapeHtml(m.label)}</strong></div>`).join('');
+  const yourLabelBelow=merged.some(m=>Math.abs(m.left-salaryLeft)<9);
+  const gapText=result.gap>0 ? `${moneyFull(result.gap)} below median` : result.gap<0 ? `${moneyFull(Math.abs(result.gap))} above median` : 'At market median';
+  const gapSub=result.gapPct==null||Math.abs(result.gapPct)<.05 ? 'No salary gap' : `${Math.abs(result.gapPct).toFixed(1)}% ${result.gap>0?'increase to reach median':'above median'}`;
+  const rankText=result.belowAll?'Below all':result.aboveAll?'Above all':marketOrdinal(result.percentileRank);
+  const rankSub=result.belowAll?`Lower than all ${result.pays.length} matched records`:result.aboveAll?`Higher than all ${result.pays.length} matched records`:'Within matched sample';
+  const sampleSub=`${result.employerCount} employer payroll · ${result.selfCount} self-reported`;
+  const rows=[['10th percentile',result.p10],['25th percentile',result.p25],['Market median',result.median],['75th percentile',result.p75],['90th percentile',result.p90],['Your salary',result.salary]];
+  const tableRows=rows.map(([label,value])=>{const difference=value-result.salary;return `<tr><td>${escapeHtml(label)}</td><td><b>${moneyFull(value)}</b></td><td>${label==='Your salary'||Math.round(difference)===0?'—':`${difference>0?'+':'−'}${moneyFull(Math.abs(difference))}`}</td></tr>`;}).join('');
+  const smallSample=result.pays.length<10?` Only ${result.pays.length} records matched, so treat these figures as directional.`:'';
+  const notUsedText=result.notUsed.length?` Not used in this match (too few records): ${result.notUsed.join(', ')}.`:'';
+  const screenText=result.screenedTitle?` ${result.screenedTitle} self-reported ${result.screenedTitle===1?'salary':'salaries'} for this title fell far outside the employer-payroll range for the role level and ${result.screenedTitle===1?'was':'were'} excluded.`:'';
+  target.innerHTML=`<div class="market-result-head"><div><h2>Your Market Position</h2><p>${escapeHtml(result.titleNote)}</p></div><span class="market-badge">${escapeHtml(result.position)}</span></div>
+    <div class="market-kpis">
+      <div class="market-stat"><div class="s-label">Your Percentile</div><div class="s-value">${escapeHtml(rankText)}</div><div class="s-sub">${escapeHtml(rankSub)}</div></div>
+      <div class="market-stat"><div class="s-label">Suggested Salary Target</div><div class="s-value">${moneyFull(result.median)}</div><div class="s-sub">Matched market median</div></div>
+      <div class="market-stat"><div class="s-label">Competitive Range</div><div class="s-value">${moneyFull(result.p25)}–${moneyFull(result.p75)}</div><div class="s-sub">25th to 75th percentile</div></div>
+      <div class="market-stat"><div class="s-label">Gap to Median</div><div class="s-value">${escapeHtml(gapText)}</div><div class="s-sub">${escapeHtml(gapSub)}</div></div>
+      <div class="market-stat"><div class="s-label">Benchmark Sample</div><div class="s-value">${result.rows.length.toLocaleString()}</div><div class="s-sub">${escapeHtml(sampleSub)}</div></div>
+      <div class="market-stat"><div class="s-label">Tenure / Experience Band</div><div class="s-value">${escapeHtml(result.tenureBand)}</div><div class="s-sub">${result.tenureUsed?'Used in benchmark match':'Not used; broader sample needed'}</div></div>
+    </div>
+    <div class="market-panels">
+      <section class="market-panel"><h3>Salary Range Position</h3><div class="panel-sub">Your salary compared with the matched P25, median, and P75. Green band = competitive range (P25–P75).</div><div class="salary-axis" style="margin-top:18px;height:74px"><div class="salary-track" style="background:#eef2f6"></div><div style="position:absolute;top:25px;height:12px;border-radius:999px;background:#cfe6d9;left:${pos(result.p25)}%;width:${Math.max(.6,pos(result.p75)-pos(result.p25))}%" title="Competitive range (P25–P75)"></div>
+        ${markerHtml}<div class="salary-marker yours" style="left:${salaryLeft}%"><strong style="${yourLabelBelow?'top:36px':''}">You</strong></div>
+        <span class="axis-label" style="top:56px;left:0%;transform:none">${moneyFull(axisMin)}</span><span class="axis-label" style="top:56px;left:100%;transform:translateX(-100%)">${moneyFull(axisMax)}</span></div>
+        <p class="market-guidance">${escapeHtml(result.guidance)}</p><div class="market-method"><b>Market match used:</b> ${escapeHtml(result.method)} (n=${result.rows.length.toLocaleString()}).${escapeHtml(notUsedText)}${escapeHtml(screenText)}${escapeHtml(smallSample)} The calculator broadens the match only when a narrower segment has fewer than five records or fewer than three distinct salary values. This benchmark is directional and does not account for every responsibility, benefit, tenure, or performance factor.</div></section>
+      <section class="market-panel"><h3>Matched Pay Distribution</h3><div class="panel-sub">Annualized base-pay reference points.</div><table class="market-breakdown"><thead><tr><th>Benchmark</th><th>Salary</th><th>vs. you</th></tr></thead><tbody>${tableRows}</tbody></table></section>
+    </div>`;
+};
+</script>
 </body>
 </html>
